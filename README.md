@@ -10,5 +10,8 @@ I want to use cross-seed and make files available in my library as much as possi
 3) deletes the torrent / associated file when it identifies there is no hardlinked file in the library.
 
 Prereqs:
-This script works with a Transmission container running in docker. For whatever reason I had back in the day, my transmission runs on a non-standard port (i.e. not 9091).
-Your cross-seeds need to be labeled as "cross-seed"
+This script works with a Transmission container running in docker. 
+Your cross-seeds need to be labeled as "cross-seed".
+
+Setup:
+All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration.
