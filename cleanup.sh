@@ -46,7 +46,7 @@ get_torrent_id_for_file() {
     local file=$1
     local basename=$(basename "$file")
     # Loop through all torrents and match basenames
-    for torrent_id in $(docker exec transmission-vpn transmission-remote 127.0.0.1:9092 -l | awk '{print $1}'); do
+    for torrent_id in $(docker exec '$TRANSMISSION' transmission-remote '$ADDRESS' -l | awk '{print $1}'); do
         if docker exec '$TRANSMISSION' transmission-remote '$ADDRESS' -t "$torrent_id" -f | grep -q "$basename"; then
             echo "$torrent_id"
             return 0
