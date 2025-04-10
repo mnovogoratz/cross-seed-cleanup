@@ -8,12 +8,19 @@ I want to use cross-seed and make files available in my library as much as possi
 1) identifies when a file is deleted from my library
 2) checks to see if there is an associated hardlinked file being seeded
 3) Verifies that the torrent has seeded for at least X days OR is labeled as a cross-seed.
-4) deletes the torrent / associated file when it identifies there is no hardlinked file in the library.
+4) deletes the torrent / associated files.
 
 Prereqs:
 This script works with a Transmission container running in docker. 
 Your cross-seeds need to be labeled as "cross-seed".
 The logic for identifying seeds for deletion relies on hardlinks being set up. If you do not use hard-links, this will just delete everything you are seeding assuming it has seeded for at least X days.
+
+WHAT IT ACTUALLY DOES:
+1) Cycles through every file located in the "search directory"
+2) For every file in the "search directory" it checks to see if a hardlinked file exists in the "archive directory"
+3) If there is no file in the "archive directory" it queries Transmission to determine what torrent contains the file in the search directory.
+4) Once the torrent is identified, the seeding time for the torrent is retrieved and compared to the defined seeding time variable.
+5) If the seeding time is greater than the amount specified OR if the torrent is labeled as a cross-seed, the torrent and associated files are deleted.
 
 Setup:
 All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration. If you want to do a dryrun run with "-d" and it will just log what would be deleted (eg. command - ./cleanup.sh -d)
