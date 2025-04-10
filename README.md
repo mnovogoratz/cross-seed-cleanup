@@ -1,2 +1,14 @@
 # cross-seed-cleanup
 Script checks if a seeding file is still present in library, if not delete.
+
+Script is very ruidmentary, takes a long time to run, and not intended to be very versatile. I made it because I couldn't find something that did what I wanted, and it works fine for me.
+
+THE IDEA:
+I want to use cross-seed and make files available in my library as much as possible. I also don't want to waste a lot of space, and I don't want to go around pruning everything manually to clear up space. I couldn't find a readymade solution that:
+1) identifies when a file is deleted from my library
+2) checks to see if there is an associated hardlinked file being seeded
+3) deletes the torrent / associated file when it identifies there is no hardlinked file in the library.
+
+Prereqs:
+This script works with a Transmission container running in docker. For whatever reason I had back in the day, my transmission runs on a non-standard port (i.e. not 9091).
+Your cross-seeds need to be labeled as "cross-seed"
