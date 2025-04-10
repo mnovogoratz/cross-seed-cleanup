@@ -17,3 +17,6 @@ The logic for identifying seeds for deletion relies on hardlinks being set up. I
 
 Setup:
 All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration. If you want to do a dryrun run with "-d" and it will just log what would be deleted (eg. command - ./cleanup.sh -d)
+
+Improvement opportunities:
+The part of the script that is very slow is the get_torrent_id_for_file() function. It works by individually querying each torrent ID in transmission for a file list, checks that list, and then determines if the file it is reviewing is present in that torrent or not. It also stops as soon as it finds a match, and doesn't look for additional torrents which are likely present due to cross-seeds. There surely is some optimization that could be done here, but it doesn't bother me enough to do anything about it because the script as is will eventually get everything.
