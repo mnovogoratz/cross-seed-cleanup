@@ -8,7 +8,7 @@ SEARCH_DIR=("/path/to/seed/source/1" "/path/to/seed/source/2" "/path/to/seed/sou
 ARCHIVE_DIR="/path/to/library/media"
 # Define the name of your Transmission container, address:port, and cross-seed label.
 TRANSMISSION="transmission-vpn"
-ADDRESS="localhost:9092"
+ADDRESS="localhost:9091"
 CROSS_SEED_LABEL="cross-seed"
 # Set the dry-run option (use -d to enable dry run mode). Dry run mode will tell you which seeds would be deleted, but doesn't actually do it.
 DRY_RUN=false
