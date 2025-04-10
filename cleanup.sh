@@ -3,9 +3,9 @@
 # Set the threshold for seeding duration (in days)
 SEEDING_DAYS=14
 
-# Set the directory to search for files and the target archive directory. If only one search directory, that's fine, just delete extras.
+# Set the directory to search for files and the target archive directory. If only one search directory just delete extras.
 SEARCH_DIR=("/path/to/seed/source/1" "/path/to/seed/source/2" "/path/to/seed/source/3")
-ARCHIVE_DIR="/volume1/data/media"
+ARCHIVE_DIR="/path/to/library/media"
 # Define the name of your Transmission container and address:port.
 TRANSMISSION="transmission-vpn"
 ADDRESS="localhost:9092"
