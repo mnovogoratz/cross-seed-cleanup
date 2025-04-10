@@ -6,9 +6,10 @@ SEEDING_DAYS=14
 # Set the directory to search for files and the target archive directory. If only one search directory just delete extras.
 SEARCH_DIR=("/path/to/seed/source/1" "/path/to/seed/source/2" "/path/to/seed/source/3")
 ARCHIVE_DIR="/path/to/library/media"
-# Define the name of your Transmission container and address:port.
+# Define the name of your Transmission container, address:port, and cross-seed label.
 TRANSMISSION="transmission-vpn"
 ADDRESS="localhost:9092"
+CROSS_SEED_LABEL="cross-seed"
 # Set the dry-run option (use -d to enable dry run mode). Dry run mode will tell you which seeds would be deleted, but doesn't actually do it.
 DRY_RUN=false
 # Define the minimum file size to review. If a file is below this size (in MB), then the script will not look to remove associated seeds.
@@ -72,7 +73,7 @@ get_seeding_duration() {
 # Function to check if a torrent is a cross-seed
 is_cross_seed() {
     local torrent_id=$1
-    docker exec '$TRANSMISSION' transmission-remote '$ADDRESS' -t "$torrent_id" -i | grep -q "cross-seed"
+    docker exec '$TRANSMISSION' transmission-remote '$ADDRESS' -t "$torrent_id" -i | grep -q '$CROSS_SEED_LABEL'
     return $?
 }
 
