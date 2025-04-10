@@ -16,4 +16,4 @@ Your cross-seeds need to be labeled as "cross-seed".
 The logic for identifying seeds for deletion relies on hardlinks being set up. If you do not use hard-links, this will just delete everything you are seeding assuming it has seeded for at least X days.
 
 Setup:
-All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration.
+All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration. If you want to do a dryrun run with "-d" and it will just log what would be deleted (eg. command - ./cross-seed-cleanup.sh -d)
