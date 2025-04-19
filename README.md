@@ -12,18 +12,15 @@ I want to use cross-seed and make files available in my library as much as possi
 
 Prereqs:
 This script works with a Transmission container running in docker. 
-Your cross-seeds need to be labeled as "cross-seed".
+Your cross-seeds need to be have a single descriptive label (e.g. "cross-seed"), not an individual label per tracker.
 The logic for identifying seeds for deletion relies on hardlinks being set up. If you do not use hard-links, this will just delete everything you are seeding assuming it has seeded for at least X days.
 
 WHAT IT ACTUALLY DOES:
 1) Cycles through every file located in the "search directory"
 2) For every file in the "search directory" it checks to see if a hardlinked file exists in the "archive directory"
-3) If there is no file in the "archive directory" it queries Transmission to determine what torrent contains the file in the search directory.
-4) Once the torrent is identified, the seeding time for the torrent is retrieved and compared to the defined seeding time variable.
-5) If the seeding time is greater than the amount specified OR if the torrent is labeled as a cross-seed, the torrent and associated files are deleted.
+3) If there is no file in the "archive directory" it queries Transmission to determine all torrents that contain the file in the search directory.
+4) Once the torrents are identified, the "primary" torrent is identified, and its seeding time and ratio are retrieved and compared to the defined seeding time and ratio variable.
+5) If the seeding time OR ratio is greater than the amount specified OR if the torrent is labeled as a cross-seed, the torrent and associated files are deleted.
 
 Setup:
 All variables that you should need to define are at the top of the script, read the comments and make the necessary changes for your configuration. If you want to do a dryrun run with "-d" and it will just log what would be deleted (eg. command - ./cleanup.sh -d)
-
-Improvement opportunities:
-The part of the script that is very slow is the get_torrent_id_for_file() function. It works by individually querying each torrent ID in transmission for a file list, checks that list, and then determines if the file it is reviewing is present in that torrent or not. It also stops as soon as it finds a match, and doesn't look for additional torrents which are likely present due to cross-seeds. There surely is some optimization that could be done here, but it doesn't bother me enough to do anything about it because the script as is will eventually get everything.
