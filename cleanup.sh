@@ -1,134 +1,148 @@
 #!/bin/bash
 
-# Set the threshold for seeding duration (in days)
+# User configuration
 SEEDING_DAYS=14
-
-# Set the directory to search for files and the target archive directory. If only one search directory just delete extras.
-SEARCH_DIR=("/path/to/seed/source/1" "/path/to/seed/source/2" "/path/to/seed/source/3")
-ARCHIVE_DIR="/path/to/library/media"
-# Define the name of your Transmission container, address:port, and cross-seed label.
+SEARCH_DIR=("/path/to/search/directory/1" "/path/to/search/directory/2" "/path/to/search/directory/3")
+ARCHIVE_DIR="/volume1/data/media"
 TRANSMISSION="transmission-vpn"
 ADDRESS="localhost:9091"
 CROSS_SEED_LABEL="cross-seed"
-# Set the dry-run option (use -d to enable dry run mode). Dry run mode will tell you which seeds would be deleted, but doesn't actually do it.
 DRY_RUN=false
+MIN_SIZE=100
+SUMMARY_FILE="/path/to/deletion_summary.txt"
 
-# Parse command-line arguments
 while getopts "d" opt; do
   case $opt in
-    d) DRY_RUN=true;;  # If -d is passed, set DRY_RUN to true
+    d) DRY_RUN=true;;
     *) echo "Usage: $0 [-d]"; exit 1;;
   esac
 done
 
-# Summary file location
-SUMMARY_FILE="./deletion_summary.txt"
-
-# Function to check if a file has a hardlink in the archive directory
-has_hardlink_in_archive() {
-    local file="$1"
-    local file_inode
-    file_inode=$(stat --format='%i' "$file")
-    # Look for other files with the same inode in the archive dir
-    find "$ARCHIVE_DIR" -type f -samefile "$file" -print -quit | grep -q .
-
-    if [ $? -eq 0 ]; then
-        return 0
-    else
-        return 1
-    fi
+get_all_torrents() {
+    docker exec "$TRANSMISSION" transmission-remote "$ADDRESS" -l | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}'
 }
 
-# Function to get the torrent ID for a given file using full file paths
-get_torrent_id_for_file() {
-    local file=$1
-    local basename=$(basename "$file")
-    # Loop through all torrents and match basenames
-    for torrent_id in $(docker exec $TRANSMISSION transmission-remote $ADDRESS -l | awk '{print $1}'); do
-        if docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" -f | grep -q "$basename"; then
-            echo "$torrent_id"
-            return 0
+get_torrent_details() {
+    local id="$1"
+    docker exec "$TRANSMISSION" transmission-remote "$ADDRESS" -t "$id" -i
+}
+
+# Function to get all torrent IDs associated with a file
+get_associated_torrents_for_file() {
+    local file_basename
+    file_basename=$(basename "$1")
+    local ids=()
+
+    for id in $(docker exec $TRANSMISSION transmission-remote $ADDRESS -l | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1}'); do
+        if docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$id" -f | grep -q "$file_basename"; then
+            ids+=("$id")
         fi
     done
-    
-    echo "DEBUG: No torrent found for file '$basename'. Skipping."
-    return 1
+
+    echo "${ids[@]}"
 }
 
-# Function to check seeding duration for a torrent
-get_seeding_duration() {
-    local torrent_id=$1
-    # Get seeding time in seconds
-    seeding_duration=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t $torrent_id -i | grep "Seeding Time" | sed -n 's/.*(\([0-9]\+\) seconds).*/\1/p')
-    # Convert seeding duration to seconds (if not already in seconds)
-    seeding_duration=$((seeding_duration))
-    # Return the valid seeding duration
-    echo "$seeding_duration"
-}
-
-
-
-# Function to check if a torrent is a cross-seed
-is_cross_seed() {
-    local torrent_id=$1
-    docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" -i | grep -q '$CROSS_SEED_LABEL'
-    return $?
-}
-
-SEEDING_SECONDS=$(($SEEDING_DAYS * 86400))
-
-# Define archive extensions
-ARCHIVE_EXTENSIONS="\.rar$|\.r[0-9]{2}$"
-
-
-# Loop through files in the SEARCH_DIR
-find "${SEARCH_DIR[@]}" -type f -size +100M| while read -r file; do
-    # Skip archive files if in dry-run mode
-#    if "$file" =~ $ARCHIVE_EXTENSIONS; then
-#        echo "Skipping archive file '$file'."
-#        continue
-#    fi
-    echo "DEBUG: Reviewing file '$file'..."
-
-    # Check if the file has a hardlink in the archive directory
-    if ! has_hardlink_in_archive "$file"; then
-        echo "DEBUG: File '$file' doesn't have a hardlink in the archive directory."
-
-        # Get associated torrents for this file
-        torrent_id=$(get_torrent_id_for_file "$file")
-        
-        if [ -n "$torrent_id" ]; then
-            echo "DEBUG: Found torrent ID '$torrent_id' for file '$file'."
-
-            # Get the seeding duration
-            seeding_duration=$(get_seeding_duration "$torrent_id")
-            echo "DEBUG: Seeding duration for '$file': $seeding_duration"
-
-            # Check if torrent is cross-seed (skip seeding duration check)
-            if is_cross_seed "$torrent_id"; then
-                echo "DEBUG: Torrent '$torrent_id' is marked as cross-seed, will be deleted."
-                echo "$(date): Torrent '$torrent_id' - '$file' deleted for being cross-seed" >> "$SUMMARY_FILE"
-                if [ "$DRY_RUN" = false ]; then
-                    docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
-                fi
-            elif [ "$seeding_duration" -ge "$SEEDING_SECONDS" ]; then
-                # Check if torrent has seeded for more than the configured SEEDING_DAYS
-                echo "DEBUG: Torrent '$torrent_id' has seeded for $seeding_duration days, eligible for deletion."
-                echo "$(date): Torrent '$torrent_id' - '$file' deleted for being over $SEEDING_DAYS days seeding" >> "$SUMMARY_FILE"
-                if [ "$DRY_RUN" = false ]; then
-                    docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
-                fi
-            else
-                echo "DEBUG: Torrent '$torrent_id' hasn't seeded for $SEEDING_DAYS days, skipping."
-                remains=$(($SEEDING_SECONDS-$seeding_duration))
-                echo "$(date): Torrent '$torrent_id' - '$(basename "$file")' will be deleted after '$(($remains/86400))' days of seeding" >> "$SUMMARY_FILE"
-            fi
-        else
-            echo "DEBUG: No matching torrent found for file '$file'."
+# Function to find the primary torrent among a set of IDs
+find_primary_torrent() {
+    local ids=("$@")
+    for id in "${ids[@]}"; do
+        label=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$id" -i | grep "Location:" | awk -F ': ' '{print $2}' | xargs)
+        if [[ "$label" == *"TV"* || "$label" == *"Movies"* ]]; then
+            echo "$id"
+            return
         fi
-    #else
-        #echo "DEBUG: File '$file' has a hardlink in the archive directory, skipping."
+    done
+    # No primary found
+    echo ""
+}
+
+get_torrent_label() {
+    local id="$1"
+    get_torrent_details "$id" | grep -E "Label: " | awk -F': ' '{print $2}' | tr -d '\r'
+}
+
+get_ratio() {
+    local id="$1"
+    get_torrent_details "$id" | grep "Ratio:" | awk -F': ' '{print $2}' | awk '{print $1}'
+}
+
+has_hardlink_in_archive() {
+    local file="$1"
+    find "$ARCHIVE_DIR" -type f -samefile "$file" -print -quit | grep -q .
+}
+
+# Main processing loop
+today_day=$(date +%d)
+
+find "${SEARCH_DIR[@]}" -type f -size +${MIN_SIZE}M | while read -r file; do
+    echo "DEBUG: Reviewing '$file'"
+
+    [[ "$DRY_RUN" == true && "$file" =~ \.r[0-9]{2}$|\.rar$ ]] && {
+        echo "DEBUG: Skipping archive file '$file'"
+        continue
+    }
+
+    if has_hardlink_in_archive "$file"; then
+        echo "DEBUG: File '$file' has hardlink in archive, skipping."
+        continue
     fi
+
+# Get associated torrent IDs
+associated_ids=($(get_associated_torrents_for_file "$file"))
+if [ ${#associated_ids[@]} -eq 0 ]; then
+    echo "DEBUG: No associated torrents found for '$file'. Skipping."
+    continue
+fi
+echo "DEBUG: Found associated torrents: ${associated_ids[*]}"
+
+# Find the primary torrent (TV or Movies)
+primary_id=$(find_primary_torrent "${associated_ids[@]}")
+if [ -z "$primary_id" ]; then
+    echo "DEBUG: No primary torrent found. Skipping '$file'."
+    continue
+fi
+
+# Calculate seeding duration using added date
+added_date=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$primary_id" -i | grep "Date added" | sed -n 's/.*: //p')
+if [[ -n "$added_date" ]]; then
+    added_day=$(date -d "$added_date" +%s)
+    current_day=$(date +%s)
+    seeding_duration_seconds=$((current_day - added_day))
+    seeding_duration_days=$(($seeding_duration_seconds/86400))
+else
+    seeding_duration_days=0
+fi
+echo "DEBUG: Primary seeding duration: $seeding_duration_days days"
+
+# Get ratio
+ratio_str=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$primary_id" -i | grep "Ratio:" | awk '{print $2}' | xargs)
+ratio_int=$(echo "$ratio_str" | awk -F. '{printf("%d\n", $1)}')
+ratio_frac=$(echo "$ratio_str" | awk -F. '{printf("%d\n", $2)}')
+ratio_over_one=false
+if (( ratio_int > 1 )) || (( ratio_int == 1 && ratio_frac > 0 )); then
+    ratio_over_one=true
+fi
+echo "DEBUG: Primary ratio: $ratio_str"
+
+# Now loop through associated torrents to decide deletion
+for torrent_id in "${associated_ids[@]}"; do
+    label=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" -i | grep "Location:" | awk -F ': ' '{print $2}' | xargs)
+
+    if [[ "$label" == *"$CROSS_SEED_LABEL"* ]]; then
+        echo "DEBUG: Torrent $torrent_id is a cross-seed. Deleting."
+        echo "$(date): Torrent $torrent_id - '$file' deleted as cross-seed" >> "$SUMMARY_FILE"
+        [ "$DRY_RUN" = false ] && docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
+    elif [[ "$seeding_duration_days" -ge "$SEEDING_DAYS" || "$ratio_over_one" = true ]]; then
+        echo "DEBUG: Torrent $torrent_id exceeds age or ratio. Deleting."
+        echo "$(date): Torrent $torrent_id - '$file' deleted after $seeding_duration_days days or ratio $ratio_str" >> "$SUMMARY_FILE"
+        [ "$DRY_RUN" = false ] && docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
+    else
+        echo "DEBUG: Torrent $torrent_id does not meet deletion criteria. Skipping."
+        remains=$((SEEDING_DAYS - seeding_duration_days))
+        echo "$(date): Torrent $torrent_id - '$(basename "$file")' will be deleted after $remains more days of seeding" >> "$SUMMARY_FILE"
+    fi
+done
+
 done
 
 echo "DEBUG: Script completed."
