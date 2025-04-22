@@ -1,15 +1,15 @@
 #!/bin/bash
 
 # User configuration
-SEEDING_DAYS=14
-SEARCH_DIR=("/path/to/search/directory/1" "/path/to/search/directory/2" "/path/to/search/directory/3")
-ARCHIVE_DIR="/volume1/data/media"
-TRANSMISSION="transmission-vpn"
+SEEDING_DAYS=16
+SEARCH_DIR=("/path/to/torrents/1" "/path/to/torrents/2" "/path/to/torrents/3")
+ARCHIVE_DIR="/path/to/library"
+TRANSMISSION="CONTAINER_NAME"
 ADDRESS="localhost:9091"
 CROSS_SEED_LABEL="cross-seed"
 DRY_RUN=false
 MIN_SIZE=100
-SUMMARY_FILE="/path/to/deletion_summary.txt"
+SUMMARY_FILE="/path/to/logfile.txt"
 
 while getopts "d" opt; do
   case $opt in
@@ -75,7 +75,7 @@ has_hardlink_in_archive() {
 today_day=$(date +%d)
 
 find "${SEARCH_DIR[@]}" -type f -size +${MIN_SIZE}M | while read -r file; do
-    echo "DEBUG: Reviewing '$file'"
+#    echo "DEBUG: Reviewing '$file'"
 
     [[ "$DRY_RUN" == true && "$file" =~ \.r[0-9]{2}$|\.rar$ ]] && {
         echo "DEBUG: Skipping archive file '$file'"
@@ -90,15 +90,35 @@ find "${SEARCH_DIR[@]}" -type f -size +${MIN_SIZE}M | while read -r file; do
 # Get associated torrent IDs
 associated_ids=($(get_associated_torrents_for_file "$file"))
 if [ ${#associated_ids[@]} -eq 0 ]; then
-    echo "DEBUG: No associated torrents found for '$file'. Skipping."
+#    echo "DEBUG: No associated torrents found for '$file'. Skipping."
     continue
 fi
-echo "DEBUG: Found associated torrents: ${associated_ids[*]}"
+#echo "DEBUG: Found associated torrents: ${associated_ids[*]}"
 
 # Find the primary torrent (TV or Movies)
 primary_id=$(find_primary_torrent "${associated_ids[@]}")
 if [ -z "$primary_id" ]; then
-    echo "DEBUG: No primary torrent found. Skipping '$file'."
+#    echo "DEBUG: No primary torrent found. Skipping '$file'."
+    all_cross_seed=true
+    for tid in "${associated_ids[@]}"; do
+        if ! docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$tid" -i | grep -q "$CROSS_SEED_LABEL"; then
+            all_cross_seed=false
+            break
+        fi
+    done
+
+        if [ "$all_cross_seed" = true ]; then
+#            echo "DEBUG: All associated torrents are labeled as cross-seed. Deleting them."
+        for tid in "${associated_ids[@]}"; do
+        echo "$(date): Cross-seed torrent '$tid' - '$file' deleted (no primary found)" >> "$SUMMARY_FILE"
+        echo "$(date): Cross-seed torrent '$tid' - '$file' deleted (no primary found)"
+            if [ "$DRY_RUN" = false ]; then
+                docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$tid" --remove-and-delete
+            fi
+            done
+#        else
+#            echo "DEBUG: Mixed labels found and no primary torrent. Skipping deletion."
+        fi
     continue
 fi
 
@@ -112,32 +132,32 @@ if [[ -n "$added_date" ]]; then
 else
     seeding_duration_days=0
 fi
-echo "DEBUG: Primary seeding duration: $seeding_duration_days days"
+#echo "DEBUG: Primary seeding duration: $seeding_duration_days days"
 
 # Get ratio
 ratio_str=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$primary_id" -i | grep "Ratio:" | awk '{print $2}' | xargs)
 ratio_int=$(echo "$ratio_str" | awk -F. '{printf("%d\n", $1)}')
 ratio_frac=$(echo "$ratio_str" | awk -F. '{printf("%d\n", $2)}')
 ratio_over_one=false
-if (( ratio_int > 1 )) || (( ratio_int == 1 && ratio_frac > 0 )); then
+if (( ratio_int > 1 )); then
     ratio_over_one=true
 fi
-echo "DEBUG: Primary ratio: $ratio_str"
+#echo "DEBUG: Primary ratio: $ratio_str"
 
 # Now loop through associated torrents to decide deletion
 for torrent_id in "${associated_ids[@]}"; do
     label=$(docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" -i | grep "Location:" | awk -F ': ' '{print $2}' | xargs)
 
     if [[ "$label" == *"$CROSS_SEED_LABEL"* ]]; then
-        echo "DEBUG: Torrent $torrent_id is a cross-seed. Deleting."
+        echo "Torrent $torrent_id is a cross-seed. Deleting."
         echo "$(date): Torrent $torrent_id - '$file' deleted as cross-seed" >> "$SUMMARY_FILE"
         [ "$DRY_RUN" = false ] && docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
     elif [[ "$seeding_duration_days" -ge "$SEEDING_DAYS" || "$ratio_over_one" = true ]]; then
-        echo "DEBUG: Torrent $torrent_id exceeds age or ratio. Deleting."
+        echo "Torrent $torrent_id exceeds age or ratio. Deleting."
         echo "$(date): Torrent $torrent_id - '$file' deleted after $seeding_duration_days days or ratio $ratio_str" >> "$SUMMARY_FILE"
         [ "$DRY_RUN" = false ] && docker exec $TRANSMISSION transmission-remote $ADDRESS -t "$torrent_id" --remove-and-delete
     else
-        echo "DEBUG: Torrent $torrent_id does not meet deletion criteria. Skipping."
+        echo "Torrent $torrent_id does not meet deletion criteria. Skipping."
         remains=$((SEEDING_DAYS - seeding_duration_days))
         echo "$(date): Torrent $torrent_id - '$(basename "$file")' will be deleted after $remains more days of seeding" >> "$SUMMARY_FILE"
     fi
@@ -145,4 +165,4 @@ done
 
 done
 
-echo "DEBUG: Script completed."
+echo "Script completed."
